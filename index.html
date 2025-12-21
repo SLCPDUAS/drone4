@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drone Check In / Out</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background:#f4f6f8;
+  margin:0;
+}
+h1 {
+  background:#0b5ed7;
+  color:white;
+  padding:15px;
+  text-align:center;
+  margin:0;
+}
+.section {
+  background:white;
+  margin:15px;
+  padding:15px;
+  border-radius:8px;
+  box-shadow:0 0 10px rgba(0,0,0,.1);
+}
+input, textarea {
+  width:100%;
+  padding:10px;
+  margin:6px 0;
+  font-size:16px;
+}
+button {
+  width:100%;
+  padding:14px;
+  margin:6px 0;
+  font-size:16px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+}
+.green { background:#198754; color:white; }
+.red { background:#dc3545; color:white; }
+.blue { background:#0b5ed7; color:white; }
+.admin { background:#6f42c1; color:white; }
+.hidden { display:none; }
+small { display:block; margin-top:4px; }
+</style>
+</head>
+
+<body>
+
+<h1>Drone Inventory</h1>
+
+<div class="section">
+<h3>User Info</h3>
+<input id="userName" placeholder="Name">
+<input id="userIBM" placeholder="IBM Number">
+<textarea id="notes" placeholder="Notes (REQUIRED on check-in)"></textarea>
+</div>
+
+<div class="section">
+<h3>Drones</h3>
+<div id="droneList"></div>
+</div>
+
+<div class="section">
+<button class="admin" onclick="openAdmin()">Admin</button>
+</div>
+
+<div id="adminPanel" class="section hidden">
+<h3>Admin Panel</h3>
+
+<input id="newDrone" placeholder="New Drone Name">
+<button class="blue" onclick="addDrone()">Add Drone</button>
+
+<button onclick="exportCSV()">Export Log to CSV</button>
+
+<div id="adminDroneList"></div>
+</div>
+
+<script>
+const ADMIN_PIN = "1019";
+
+let drones = JSON.parse(localStorage.getItem("drones")) || [
+  {id:1,name:"DJI Mavic PT 30T #1"},
+  {id:2,name:"DJI Mavic 3T #1.2"},
+  {id:3,name:"DJI Mavic 3T #2.1"},
+  {id:4,name:"DJI Mavic 3T #3"},
+  {id:5,name:"DJI Mavic 3E #1"},
+  {id:6,name:"DJI Mini 3 Pro #1"},
+  {id:7,name:"DJI Mini 3 Pro #2"},
+  {id:8,name:"DJI Avata Patrol #1"},
+  {id:9,name:"Autel 640T V3 #1"},
+  {id:10,name:"Skydio X2E"},
+  {id:11,name:"DJI Matrice 4T-1"},
+  {id:12,name:"DJI Matrice 4T-2"},
+  {id:13,name:"DJI Matrice 4T-3"}
+];
+
+let log = JSON.parse(localStorage.getItem("log")) || [];
+
+function save() {
+  localStorage.setItem("drones", JSON.stringify(drones));
+  localStorage.setItem("log", JSON.stringify(log));
+}
+
+function lastStatus(id) {
+  const entries = log.filter(l => l.droneId === id);
+  return entries.length ? entries[entries.length-1] : null;
+}
+
+function render() {
+  droneList.innerHTML = "";
+  drones.forEach(d => {
+    const status = lastStatus(d.id);
+    const div = document.createElement("div");
+
+    if (status && status.action === "OUT") {
+      div.innerHTML = `
+        <button class="red" onclick="checkIn(${d.id})">
+          ${d.name}
+          <small>Checked out by ${status.name} (IBM ${status.ibm})</small>
+          <small>${status.time}</small>
+        </button>`;
+    } else {
+      div.innerHTML = `
+        <button class="green" onclick="checkOut(${d.id})">
+          ${d.name}
+          <small>Available</small>
+        </button>`;
+    }
+
+    droneList.appendChild(div);
+  });
+}
+
+function checkOut(id) {
+  const name = userName.value.trim();
+  const ibm = userIBM.value.trim();
+  if (!name || !ibm) return alert("Name and IBM required");
+
+  log.push({
+    droneId:id,
+    name,
+    ibm,
+    action:"OUT",
+    time:new Date().toLocaleString(),
+    notes:""
+  });
+
+  save();
+  render();
+}
+
+function checkIn(id) {
+  const notesText = notes.value.trim();
+  if (!notesText) return alert("Notes REQUIRED on check-in");
+
+  log.push({
+    droneId:id,
+    name:userName.value,
+    ibm:userIBM.value,
+    action:"IN",
+    time:new Date().toLocaleString(),
+    notes:notesText
+  });
+
+  notes.value="";
+  save();
+  render();
+}
+
+function openAdmin() {
+  if (prompt("Admin PIN") !== ADMIN_PIN) return alert("Incorrect PIN");
+  adminPanel.classList.remove("hidden");
+  renderAdmin();
+}
+
+function renderAdmin() {
+  adminDroneList.innerHTML="";
+  drones.forEach(d=>{
+    const div=document.createElement("div");
+    div.textContent=d.name;
+    const del=document.createElement("button");
+    del.textContent="Delete";
+    del.onclick=()=>{
+      drones=drones.filter(x=>x.id!==d.id);
+      log=log.filter(l=>l.droneId!==d.id);
+      save();
+      renderAdmin();
+      render();
+    };
+    div.appendChild(del);
+    adminDroneList.appendChild(div);
+  });
+}
+
+function addDrone() {
+  if (!newDrone.value.trim()) return;
+  drones.push({id:Date.now(),name:newDrone.value.trim()});
+  newDrone.value="";
+  save();
+  renderAdmin();
+  render();
+}
+
+function exportCSV() {
+  let csv="Drone,Name,IBM,Action,Time,Notes\n";
+  log.forEach(l=>{
+    const d=drones.find(x=>x.id===l.droneId);
+    csv+=`${d?.name},${l.name},${l.ibm},${l.action},${l.time},${l.notes}\n`;
+  });
+  const blob=new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="drone_log.csv";
+  a.click();
+}
+
+render();
+</script>
+
+</body>
+</html>
